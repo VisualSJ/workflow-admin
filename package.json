@@ -1,0 +1,18 @@
+{
+  "name": "workflow-admin",
+  "version": "0.1.1",
+  "description": "",
+  "main": "./dist/index.js",
+  "scripts": {
+    "test": "node test/mock"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^17.0.10"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "workflow-extra": "^0.2.7"
+  }
+}
