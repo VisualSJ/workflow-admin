@@ -4,15 +4,26 @@ import { join } from 'path';
 import chalk from 'chalk';
 
 import { Task } from './task';
+import { setCacheFile } from './cache';
 import { parallel } from 'workflow-extra';
+import { existsSync } from 'fs';
 
 interface ConfigInterface {
+    // 工作区的配置文件
     entry: string;
+    // 临时文件所在的路径
+    // 当设置了临时文件后，在 task 里存储的数据可以缓存在文件系统
+    cache?: string;
+    // 传递给每一个配置生成函数的参数
+    params?: any;
 }
 
-interface ExecuteResultInterface {
-    state: 'skip' | 'warn' | 'error' | 'success';
-    info: string;
+type TaskState = 'skip' | 'warn' | 'error' | 'success' | 'null';
+
+type TaskInfo = {
+    state: TaskState;
+    workspace: string;
+    duration: number;
 }
 
 interface RegisterOptionsInterface {
@@ -21,7 +32,7 @@ interface RegisterOptionsInterface {
     post?: Function;
     timeLength?: number;
     parallel? : number;
-    execute: (file: string) => ExecuteResultInterface;
+    execute: (file: string) => Promise<TaskState>;
 }
 
 const options: {
@@ -31,6 +42,8 @@ const options: {
 } = {
     config: {
         entry: '.workflow.js',
+        cache: undefined,
+        params: {},
     },
     workspaces: [],
     tasks: {},
@@ -42,6 +55,12 @@ const options: {
  */
 export function config(opts: ConfigInterface) {
     options.config.entry = opts.entry || options.config.entry;
+    options.config.params = opts.params || options.config.params;
+    options.config.cache = opts.cache || options.config.cache;
+
+    if (options.config.cache) {
+        setCacheFile(options.config.cache);
+    }
 }
 
 /**
@@ -71,7 +90,8 @@ export async function execute(name: string) {
     if (!opts) {
         return;
     }
-    const task = new Task();
+
+    const task = new Task(name);
     
     const title = ` ${opts.title} `.padStart(30 + opts.title.length / 2, '=').padEnd(60, '=')
     console.log(chalk.magenta(title));
@@ -83,27 +103,42 @@ export async function execute(name: string) {
         const file = join(dir, options.config.entry);
 
         const time = Date.now();
-        let result: {
-            state: string;
-            info: string | Error;
-        } = {
-            state: 'skip',
-            info: '',
+        const result: TaskInfo = {
+            state: 'null',
+            workspace: dir,
+            duration: 0,
         };
-        try {
-            result = await opts.execute.call(task, file);
 
-            if (!['error', 'success', 'warn', 'skip'].includes(result.state)) {
-                throw new Error(`Unknown state: ${result.state}`);
-            }
-
-            result.info = result.info || '';
-        } catch(error) {
-            result.state = 'error';
-            result.info = new Error(`Execute failed! ${error + ''}`);
+        if (!existsSync(file)) {
+            result.state = 'null';
+            return result;
         }
 
-        let message = String((Date.now() - time) + 'ms').padEnd(opts.timeLength || 10) + ' ';
+        const subTask = new Task(name);
+        try {
+            const configMap = require(file);
+
+            if (!configMap[name]) {
+                result.state = 'null';
+                return result;
+            }
+
+            const config = configMap[name](options.config.params);
+
+            result.state = await opts.execute.call(subTask, config);
+
+            if (!['error', 'success', 'warn', 'skip', 'null'].includes(result.state)) {
+                throw new Error(`Unknown state: ${result.state}`);
+            }
+        } catch(error) {
+            result.state = 'error';
+            if (!(error instanceof Error)) {
+                error = new Error(error + '');
+            }
+            subTask.print(error as Error);
+        }
+        result.duration = Date.now() - time;
+        let message = String(result.duration + 'ms').padEnd(opts.timeLength || 10) + ' ';
 
         switch (result.state) {
             case 'error':
@@ -115,8 +150,12 @@ export async function execute(name: string) {
             default:
                 message += chalk.yellow(result.state.padEnd(7) + ' ');
         }
-        message += result.info;
-        console.log(message);
+        message += dir;
+
+        if (result.state !== 'null') {
+            console.log(message);
+            subTask.printAll();
+        }
 
         return result;
     }, opts.parallel || 1);
@@ -126,4 +165,17 @@ export async function execute(name: string) {
     }
 
     return results;
+}
+
+/**
+ * 清空注册的任务以及工作区
+ */
+export function clear() {
+    options.workspaces = [];
+    options.config =  {
+        entry: '.workflow.js',
+        cache: undefined,
+        params: {},
+    };
+    options.tasks = {};
 }
