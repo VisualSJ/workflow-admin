@@ -1,16 +1,20 @@
 'use strict';
 
 import { statSync, readdirSync, Stats } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { spawn, SpawnOptionsWithoutStdio } from 'child_process';
 import { set, get } from './cache';
 
 export class Task {
 
     private name: string;
+    path: string;
+    file: string;
 
-    constructor(name: string) {
+    constructor(name: string, file: string) {
         this.name = name;
+        this.file = file;
+        this.path = dirname(file);
     }
 
     /**

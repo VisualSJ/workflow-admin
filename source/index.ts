@@ -8,6 +8,8 @@ import { setCacheFile } from './cache';
 import { parallel } from 'workflow-extra';
 import { existsSync } from 'fs';
 
+export type TaskState = 'skip' | 'warn' | 'error' | 'success' | 'null';
+
 interface ConfigInterface {
     // 工作区的配置文件
     entry: string;
@@ -17,8 +19,6 @@ interface ConfigInterface {
     // 传递给每一个配置生成函数的参数
     params?: any;
 }
-
-type TaskState = 'skip' | 'warn' | 'error' | 'success' | 'null';
 
 type TaskInfo = {
     state: TaskState;
@@ -32,7 +32,7 @@ interface RegisterOptionsInterface {
     post?: Function;
     timeLength?: number;
     parallel? : number;
-    execute: (file: string) => Promise<TaskState>;
+    execute: (this: Task, config: any) => Promise<TaskState>;
 }
 
 const options: {
@@ -91,7 +91,7 @@ export async function execute(name: string) {
         return;
     }
 
-    const task = new Task(name);
+    const task = new Task(name, '');
     
     const title = ` ${opts.title} `.padStart(30 + opts.title.length / 2, '=').padEnd(60, '=')
     console.log(chalk.magenta(title));
@@ -114,7 +114,7 @@ export async function execute(name: string) {
             return result;
         }
 
-        const subTask = new Task(name);
+        const subTask = new Task(name, file);
         try {
             const configMap = require(file);
 
